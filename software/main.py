@@ -1,68 +1,72 @@
-import usocket as socket
+import uasyncio as asyncio
 import board
-import time
 
-CONTENT = b"""\
+HTTP_200_OK = b"""\
 HTTP/1.0 200 OK
 
-# Environment
-bme280_temperature_celcius %d
-bme280_pressure_hpa %d.%02d
-bme280_humidity_percent %d.%02d
 """
 
-NOT_FOUND = b"""\
+HTTP_404_NOT_FOUND = b"""\
 HTTP/1.0 404 Not Found
 
 Error 404 - Page not found
 """
 
-if __name__ == '__main__':
+async def monitor_wlan():
+    was_connected = False
     while True:
-        while not board.wlan.isconnected():
-            time.sleep(0.9)
+        if board.wlan.isconnected():
+            if not was_connected:
+                board.led.green.on()
+                await asyncio.sleep_ms(1000)
+                board.led.green.off()
+                was_connected = True
+        else:
             board.led.red.on()
-            time.sleep(0.1)
+            await asyncio.sleep_ms(100)
             board.led.red.off()
+            was_connected = False
 
-        board.led.green.on()
+        await asyncio.sleep_ms(900)
 
-        ai = socket.getaddrinfo("0.0.0.0", 8080)
+def http_page_metrics(request, writer):
+    yield from writer.awrite(HTTP_200_OK)
 
-        s = socket.socket()
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind(ai[0][-1])
-        s.listen(5)
+    # Fetch sensor readings from BME280 sensor
+    if hasattr(board, 'bme280'):
+        t, p, h =  board.bme280.read_values()
+        yield from writer.awrite('# Bosch BME280 Environment Sensor\r\n')
+        yield from writer.awrite('bme280_temperature_celcius %2.2f\r\n' % t)
+        yield from writer.awrite('bme280_pressure_hpa %2.2f\r\n' % p)
+        yield from writer.awrite('bme280_humidity_percent %2.2f\r\n\r\n' % h)
 
+@asyncio.coroutine
+def http_serve(reader, writer):
+    try:
+        board.led.blue.on()
+
+        request = (yield from reader.readline())
+        print("Request:", request)
+
+        # Read request headers
         while True:
-            client = s.accept()
+            header = (yield from reader.readline())
+            if header == b"" or header == b"\r\n":
+                break
+            #print(header)
 
-            client_stream = client[0]
-            client_addr = client[1]
+        if request.startswith('GET /metrics'):
+            yield from http_page_metrics(request, writer)
+        else:
+            yield from writer.awrite(HTTP_404_NOT_FOUND)
 
-            print("Connection from:", client_addr)
-            request = client_stream.readline()
-            print("Request:", request)
-            while True:
-                header = client_stream.readline()
-                if header == b"" or header == b"\r\n":
-                    break
-                #print(header)
+        yield from writer.aclose()
+    finally:
+        board.led.blue.off()
 
-            if not request.startswith('GET /metrics'):
-                client_stream.write(NOT_FOUND)
-                client_stream.close()
-                continue
-
-            t, p, h =  board.bme.read_compensated_data()
-
-            t = t / 100
-            p = p // 256
-            pi = p // 100
-            pd = p - pi * 100
-
-            hi = h // 1024
-            hd = h * 100 // 1025 - hi * 100
-
-            client_stream.write(CONTENT % (t, pi, pd, hi, hd))
-            client_stream.close()
+if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    loop.create_task(monitor_wlan())
+    loop.call_soon(asyncio.start_server(http_serve, "0.0.0.0", 8080))
+    loop.run_forever()
+    loop.close()
