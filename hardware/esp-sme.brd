@@ -1230,6 +1230,12 @@ You are welcome to use this library for commercial purposes. For attribution, we
 <contactref element="R13" pad="1"/>
 <contactref element="Q4" pad="2"/>
 <contactref element="Q5" pad="2"/>
+<polygon width="0.1524" layer="16">
+<vertex x="0" y="34.29"/>
+<vertex x="49.53" y="34.29"/>
+<vertex x="49.53" y="-1.27"/>
+<vertex x="0" y="-1.27"/>
+</polygon>
 </signal>
 <signal name="P1_CTS">
 <contactref element="P1_RJ12" pad="2"/>
