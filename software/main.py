@@ -12,6 +12,13 @@ HTTP/1.0 404 Not Found
 Error 404 - Page not found
 """
 
+BOSH_BME280_METRICS = b"""\
+# Bosch BME280 Environment Sensor
+bme280_temperature_celcius %2.2f
+bme280_pressure_hpa %2.2f
+bme280_humidity_percent %2.2f
+"""
+
 async def monitor_wlan():
     was_connected = False
     while True:
@@ -34,11 +41,8 @@ def http_page_metrics(request, writer):
 
     # Fetch sensor readings from BME280 sensor
     if hasattr(board, 'bme280'):
-        t, p, h =  board.bme280.read_values()
-        yield from writer.awrite('# Bosch BME280 Environment Sensor\r\n')
-        yield from writer.awrite('bme280_temperature_celcius %2.2f\r\n' % t)
-        yield from writer.awrite('bme280_pressure_hpa %2.2f\r\n' % p)
-        yield from writer.awrite('bme280_humidity_percent %2.2f\r\n\r\n' % h)
+        bme280_values =  board.bme280.read_values()
+        yield from writer.awrite(BOSH_BME280_METRICS % bme280_values)
 
 @asyncio.coroutine
 def http_serve(reader, writer):
